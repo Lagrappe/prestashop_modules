@@ -25,6 +25,9 @@ class AdminCrmCyclesController extends ModuleAdminController
             return;
         }
 
+        // Cleanup orphaned marquage associations
+        $this->cleanupMarquageOrphans();
+
         // Handle form submissions
         if (Tools::isSubmit('submitCrmCyclesConfig')) {
             $this->processConfiguration();
@@ -87,7 +90,9 @@ class AdminCrmCyclesController extends ModuleAdminController
             'api_url' => Configuration::get('CRMCYCLES_API_URL'),
             'api_secret' => Configuration::get('CRMCYCLES_API_SECRET'),
             'store_key' => Configuration::get('CRMCYCLES_STORE_KEY') ?: 'guidel',
+            'portal_url' => Configuration::get('CRMCYCLES_PORTAL_URL'),
             'root_category' => (int) Configuration::get('CRMCYCLES_ROOT_CATEGORY'),
+            'invoice_override' => (int) Configuration::get('CRMCYCLES_INVOICE_OVERRIDE'),
             'dev_mode' => (int) Configuration::get('CRMCYCLES_DEV_MODE'),
             'last_sync' => Configuration::get('CRMCYCLES_LAST_SYNC'),
             'sync_logs' => $logs,
@@ -111,7 +116,9 @@ class AdminCrmCyclesController extends ModuleAdminController
         Configuration::updateValue('CRMCYCLES_API_URL', Tools::getValue('CRMCYCLES_API_URL'));
         Configuration::updateValue('CRMCYCLES_API_SECRET', Tools::getValue('CRMCYCLES_API_SECRET'));
         Configuration::updateValue('CRMCYCLES_STORE_KEY', Tools::getValue('CRMCYCLES_STORE_KEY'));
+        Configuration::updateValue('CRMCYCLES_PORTAL_URL', Tools::getValue('CRMCYCLES_PORTAL_URL'));
         Configuration::updateValue('CRMCYCLES_ROOT_CATEGORY', (int) Tools::getValue('CRMCYCLES_ROOT_CATEGORY'));
+        Configuration::updateValue('CRMCYCLES_INVOICE_OVERRIDE', (int) Tools::getValue('CRMCYCLES_INVOICE_OVERRIDE'));
         Configuration::updateValue('CRMCYCLES_DEV_MODE', (int) Tools::getValue('CRMCYCLES_DEV_MODE'));
 
         $this->confirmations[] = $this->l('Configuration sauvegardée.');
@@ -124,8 +131,11 @@ class AdminCrmCyclesController extends ModuleAdminController
 
         if ($result['success']) {
             $data = $result['data'] ?? [];
-            $this->confirmations[] = $this->l('Connexion réussie !') . ' '
-                . ($data['company_name'] ?? '');
+            $companyName = $data['company_name'] ?? '';
+            if ($companyName) {
+                Configuration::updateValue('CRMCYCLES_COMPANY_NAME', $companyName);
+            }
+            $this->confirmations[] = $this->l('Connexion réussie !') . ' ' . $companyName;
         } else {
             $this->errors[] = $this->l('Erreur de connexion : ')
                 . ($result['error']['message'] ?? 'Erreur inconnue');
@@ -162,6 +172,40 @@ class AdminCrmCyclesController extends ModuleAdminController
         foreach ($importer->getLog() as $log) {
             $this->warnings[] = $log;
         }
+    }
+
+    private function cleanupMarquageOrphans(): void
+    {
+        $prefix = _DB_PREFIX_;
+        $db = Db::getInstance();
+
+        // Remove marquage entries where the category no longer exists
+        $deleted = $db->execute(
+            'DELETE mc FROM `' . $prefix . 'marquage_category` mc
+             LEFT JOIN `' . $prefix . 'category` c ON mc.`id_category` = c.`id_category`
+             WHERE c.`id_category` IS NULL'
+        );
+
+        // Remove marquage entries where the product no longer exists
+        $db->execute(
+            'DELETE mc FROM `' . $prefix . 'marquage_category` mc
+             LEFT JOIN `' . $prefix . 'product` p ON mc.`id_product_marquage` = p.`id_product`
+             WHERE p.`id_product` IS NULL'
+        );
+
+        // Remove feature associations where the category no longer exists
+        $db->execute(
+            'DELETE mcf FROM `' . $prefix . 'marquage_category_feature` mcf
+             LEFT JOIN `' . $prefix . 'category` c ON mcf.`id_category` = c.`id_category`
+             WHERE c.`id_category` IS NULL'
+        );
+
+        // Remove feature associations where the feature no longer exists
+        $db->execute(
+            'DELETE mcf FROM `' . $prefix . 'marquage_category_feature` mcf
+             LEFT JOIN `' . $prefix . 'feature` f ON mcf.`id_feature` = f.`id_feature`
+             WHERE f.`id_feature` IS NULL'
+        );
     }
 
     private function processGenerateMenu(): void
@@ -250,6 +294,28 @@ class AdminCrmCyclesController extends ModuleAdminController
                     'promotion' => json_decode(Tools::getValue('promotion', ''), true) ?: null,
                 ];
                 $result = $importer->syncSinglePriceStock($productData);
+                break;
+
+            case 'startSyncLog':
+                $syncType = Tools::getValue('sync_type', 'products');
+                Db::getInstance()->insert('crmcycles_sync_log', [
+                    'sync_type' => pSQL($syncType),
+                    'status' => 'running',
+                    'date_start' => date('Y-m-d H:i:s'),
+                ]);
+                $result = ['success' => true, 'log_id' => (int) Db::getInstance()->Insert_ID()];
+                break;
+
+            case 'endSyncLog':
+                $logId = (int) Tools::getValue('log_id');
+                $status = Tools::getValue('status', 'success');
+                $summary = Tools::getValue('summary', '');
+                Db::getInstance()->update('crmcycles_sync_log', [
+                    'status' => pSQL($status),
+                    'summary' => pSQL($summary),
+                    'date_end' => date('Y-m-d H:i:s'),
+                ], 'id_crmcycles_sync_log = ' . $logId);
+                $result = ['success' => true];
                 break;
 
             case 'fetchProductQueue':

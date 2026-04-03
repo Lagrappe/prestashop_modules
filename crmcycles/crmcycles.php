@@ -42,9 +42,17 @@ class CrmCycles extends Module
             && $this->registerHook('actionAfterDeleteProductInCart')
             && $this->registerHook('actionObjectProductAddAfter')
             && $this->registerHook('displayBackOfficeHeader')
+            && $this->registerHook('displayCustomerAccount')
+            && $this->registerHook('actionObjectAddressAddAfter')
+            && $this->registerHook('actionObjectAddressUpdateAfter')
+            && $this->registerHook('actionValidateOrder')
+            && $this->registerHook('actionSetInvoice')
+            && $this->registerHook('actionPDFInvoiceRender')
             && Configuration::updateValue('CRMCYCLES_API_URL', '')
             && Configuration::updateValue('CRMCYCLES_API_SECRET', '')
             && Configuration::updateValue('CRMCYCLES_STORE_KEY', 'guidel')
+            && Configuration::updateValue('CRMCYCLES_PORTAL_URL', '')
+            && Configuration::updateValue('CRMCYCLES_INVOICE_OVERRIDE', 0)
             && Configuration::updateValue('CRMCYCLES_ROOT_CATEGORY', (int) Configuration::get('PS_HOME_CATEGORY'))
             && Configuration::updateValue('CRMCYCLES_DEV_MODE', 1)
             && Configuration::updateValue('CRMCYCLES_LAST_SYNC', '');
@@ -57,6 +65,9 @@ class CrmCycles extends Module
             && Configuration::deleteByName('CRMCYCLES_API_URL')
             && Configuration::deleteByName('CRMCYCLES_API_SECRET')
             && Configuration::deleteByName('CRMCYCLES_STORE_KEY')
+            && Configuration::deleteByName('CRMCYCLES_PORTAL_URL')
+            && Configuration::deleteByName('CRMCYCLES_INVOICE_OVERRIDE')
+            && Configuration::deleteByName('CRMCYCLES_COMPANY_NAME')
             && Configuration::deleteByName('CRMCYCLES_ROOT_CATEGORY')
             && Configuration::deleteByName('CRMCYCLES_DEV_MODE')
             && Configuration::deleteByName('CRMCYCLES_LAST_SYNC')
@@ -435,7 +446,8 @@ class CrmCycles extends Module
             }
         }
 
-        $cart->_products = null;
+        // Invalider le cache produits du panier (getProducts force le recalcul)
+        $cart->getProducts(true);
     }
 
     // =========================================================================
@@ -494,5 +506,374 @@ class CrmCycles extends Module
         }
 
         return $mappings;
+    }
+
+    // =========================================================================
+    // PORTAIL CLIENT : lien vers l'espace client CRM Cycles
+    // =========================================================================
+
+    public function hookDisplayCustomerAccount(array $params): string
+    {
+        $portalUrl = Configuration::get('CRMCYCLES_PORTAL_URL');
+        if (empty($portalUrl)) {
+            return '';
+        }
+
+        $companyName = Configuration::get('CRMCYCLES_COMPANY_NAME') ?: 'CRM Cycles';
+
+        return '
+        <a class="col-lg-4 col-md-6 col-sm-6 col-xs-12" href="' . htmlspecialchars($portalUrl) . '" target="_blank" rel="noopener">
+            <span class="link-item">
+                <i class="material-icons">&#xE80B;</i>
+                ' . sprintf($this->l('Mon espace %s'), htmlspecialchars($companyName)) . '
+            </span>
+        </a>';
+    }
+
+    // =========================================================================
+    // FACTURATION CRM : création facture + override PDF
+    // =========================================================================
+
+    // =========================================================================
+    // SYNC CLIENT : adresses vers CRM Cycles
+    // =========================================================================
+
+    /**
+     * Sync adresse vers le CRM quand un client crée ou modifie une adresse.
+     */
+    public function hookActionObjectAddressAddAfter(array $params): void
+    {
+        $this->syncAddressToCrm($params['object'] ?? null);
+    }
+
+    public function hookActionObjectAddressUpdateAfter(array $params): void
+    {
+        $this->syncAddressToCrm($params['object'] ?? null);
+    }
+
+    private function syncAddressToCrm($address): void
+    {
+        if (!(bool) Configuration::get('CRMCYCLES_INVOICE_OVERRIDE')) {
+            return;
+        }
+
+        if (!$address instanceof Address || !$address->id_customer) {
+            return;
+        }
+
+        try {
+            require_once __DIR__ . '/classes/CrmCyclesApi.php';
+
+            $api = new CrmCyclesApi();
+            $customer = new Customer((int) $address->id_customer);
+
+            if (!Validate::isLoadedObject($customer)) {
+                return;
+            }
+
+            // Déterminer le type d'adresse (PS n'a pas de type explicite,
+            // on se base sur l'alias ou on envoie en billing par défaut)
+            $alias = strtolower($address->alias);
+            $isBilling = (strpos($alias, 'factur') !== false || strpos($alias, 'billing') !== false);
+            $isShipping = (strpos($alias, 'livraison') !== false || strpos($alias, 'delivery') !== false || strpos($alias, 'shipping') !== false);
+
+            $addressData = [
+                'address_line1' => $address->address1,
+                'address_line2' => $address->address2,
+                'postal_code' => $address->postcode,
+                'city' => $address->city,
+                'country' => Country::getIsoById((int) $address->id_country),
+            ];
+
+            $data = [
+                'email' => $customer->email,
+                'first_name' => $customer->firstname,
+                'last_name' => $customer->lastname,
+                'phone_mobile' => $address->phone_mobile ?: $address->phone,
+            ];
+
+            if ($isBilling && !$isShipping) {
+                $data['billing_address'] = $addressData;
+            } elseif ($isShipping && !$isBilling) {
+                $data['shipping_address'] = $addressData;
+            } else {
+                // Par défaut, on envoie les deux
+                $data['billing_address'] = $addressData;
+                $data['shipping_address'] = $addressData;
+            }
+
+            $api->createCustomer($data);
+        } catch (\Throwable $e) {
+            PrestaShopLogger::addLog(
+                'CRM Cycles: erreur sync adresse — ' . $e->getMessage(),
+                3, 0, 'Address', (int) $address->id
+            );
+        }
+    }
+
+    // =========================================================================
+    // FACTURATION CRM : création facture + override PDF
+    // =========================================================================
+
+    /**
+     * À la validation d'une commande PS, créer le client + facture dans le CRM.
+     */
+    public function hookActionValidateOrder(array $params): void
+    {
+        if (!(bool) Configuration::get('CRMCYCLES_INVOICE_OVERRIDE')) {
+            return;
+        }
+
+        require_once __DIR__ . '/classes/CrmCyclesApi.php';
+
+        $order = $params['order'] ?? null;
+        $customer = $params['customer'] ?? null;
+
+        if (!$order || !$customer) {
+            return;
+        }
+
+        try {
+            $api = new CrmCyclesApi();
+
+            // 1. Créer / retrouver le client dans le CRM
+            $address = new Address((int) $order->id_address_delivery);
+            $billingAddress = new Address((int) $order->id_address_invoice);
+
+            $customerResult = $api->createCustomer([
+                'email' => $customer->email,
+                'first_name' => $customer->firstname,
+                'last_name' => $customer->lastname,
+                'phone_mobile' => $address->phone_mobile ?: $address->phone,
+                'customer_type' => !empty($customer->company) ? 'company' : 'individual',
+                'company_name' => $customer->company ?: null,
+                'gender' => $customer->id_gender == 1 ? 'M' : ($customer->id_gender == 2 ? 'F' : null),
+                'billing_address' => [
+                    'address_line1' => $billingAddress->address1,
+                    'address_line2' => $billingAddress->address2,
+                    'postal_code' => $billingAddress->postcode,
+                    'city' => $billingAddress->city,
+                    'country' => Country::getIsoById((int) $billingAddress->id_country),
+                ],
+                'shipping_address' => [
+                    'address_line1' => $address->address1,
+                    'address_line2' => $address->address2,
+                    'postal_code' => $address->postcode,
+                    'city' => $address->city,
+                    'country' => Country::getIsoById((int) $address->id_country),
+                ],
+            ]);
+
+            if (!$customerResult['success']) {
+                PrestaShopLogger::addLog(
+                    'CRM Cycles: échec création client CRM pour commande #' . $order->id . ' — ' . ($customerResult['error']['message'] ?? 'Erreur inconnue'),
+                    3, 0, 'Order', (int) $order->id
+                );
+                return;
+            }
+
+            $crmCustomerId = (int) $customerResult['data']['customer_id'];
+
+            // 2. Construire les lignes produit
+            // Tous les produits de la commande doivent exister dans le CRM.
+            // Si un produit n'est pas trouvé, on abandonne et PS gère sa facture normalement.
+            $orderDetails = $order->getProductsDetail();
+            $items = [];
+            $missingSkus = [];
+
+            foreach ($orderDetails as $detail) {
+                $sku = $detail['product_reference'] ?? '';
+                $crmProductId = $this->getCrmProductIdBySku($sku);
+
+                if ($crmProductId) {
+                    $items[] = [
+                        'productId' => $crmProductId,
+                        'quantity' => (int) $detail['product_quantity'],
+                    ];
+                } else {
+                    $missingSkus[] = $sku ?: '(sans réf.)';
+                }
+            }
+
+            if (!empty($missingSkus)) {
+                PrestaShopLogger::addLog(
+                    'CRM Cycles: facture CRM non créée pour commande #' . $order->id
+                    . ' — produits absents du CRM : ' . implode(', ', $missingSkus)
+                    . '. La facturation PrestaShop standard s\'applique.',
+                    2, 0, 'Order', (int) $order->id
+                );
+                return;
+            }
+
+            if (empty($items)) {
+                return;
+            }
+
+            // 3. Créer la facture dans le CRM
+            $shippingTTC = (float) $order->total_shipping_tax_incl;
+
+            // Le statut PS indique si le paiement est déjà effectué
+            $orderStatus = $params['orderStatus'] ?? null;
+            $isPaid = $orderStatus && (bool) $orderStatus->paid;
+
+            $orderResult = $api->createOrder([
+                'payment_reference' => 'PS-' . $order->id . '-' . $order->reference,
+                'customer_id' => $crmCustomerId,
+                'items' => $items,
+                'shipping_method' => $shippingTTC > 0 ? 'delivery' : 'pickup',
+                'shipping_method_label' => $this->getCarrierName($order),
+                'shipping_price_ttc' => $shippingTTC,
+                'customer_note' => $order->getFirstMessage() ?: '',
+                'internal_note' => 'Commande PrestaShop #' . $order->id . ' — Ref: ' . $order->reference,
+                'payment_method_label' => $order->payment ?: 'Paiement en ligne',
+                'paid' => $isPaid,
+            ]);
+
+            if (!$orderResult['success']) {
+                PrestaShopLogger::addLog(
+                    'CRM Cycles: échec création facture CRM pour commande #' . $order->id . ' — ' . ($orderResult['error']['message'] ?? 'Erreur inconnue'),
+                    3, 0, 'Order', (int) $order->id
+                );
+                return;
+            }
+
+            // 4. Stocker le mapping
+            Db::getInstance()->insert('crmcycles_order_map', [
+                'id_order' => (int) $order->id,
+                'crm_customer_id' => $crmCustomerId,
+                'crm_invoice_id' => (int) $orderResult['data']['invoice_id'],
+                'crm_invoice_number' => pSQL($orderResult['data']['invoice_number'] ?? ''),
+                'date_add' => date('Y-m-d H:i:s'),
+            ]);
+
+            PrestaShopLogger::addLog(
+                'CRM Cycles: facture CRM #' . ($orderResult['data']['invoice_number'] ?? '') . ' créée pour commande PS #' . $order->id,
+                1, 0, 'Order', (int) $order->id
+            );
+        } catch (\Throwable $e) {
+            PrestaShopLogger::addLog(
+                'CRM Cycles: exception facturation — ' . $e->getMessage(),
+                3, 0, 'Order', (int) $order->id
+            );
+        }
+    }
+
+    /**
+     * Override du numéro de facture PS par celui du CRM.
+     */
+    public function hookActionSetInvoice(array $params): void
+    {
+        if (!(bool) Configuration::get('CRMCYCLES_INVOICE_OVERRIDE')) {
+            return;
+        }
+
+        $order = $params['Order'] ?? null;
+        if (!$order) {
+            return;
+        }
+
+        $mapping = Db::getInstance()->getRow(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'crmcycles_order_map`
+             WHERE `id_order` = ' . (int) $order->id
+        );
+
+        if ($mapping && !empty($mapping['crm_invoice_number'])) {
+            // Override le numéro de facture PS par celui du CRM
+            $orderInvoice = $params['OrderInvoice'] ?? null;
+            if ($orderInvoice instanceof OrderInvoice) {
+                $orderInvoice->number = 0; // Empêche la numérotation PS
+            }
+        }
+    }
+
+    /**
+     * Override du PDF facture : servir le PDF CRM à la place.
+     */
+    public function hookActionPDFInvoiceRender(array $params): void
+    {
+        if (!(bool) Configuration::get('CRMCYCLES_INVOICE_OVERRIDE')) {
+            return;
+        }
+
+        $orderInvoice = $params['order_invoice_list'][0] ?? null;
+        if (!$orderInvoice instanceof OrderInvoice) {
+            return;
+        }
+
+        $mapping = Db::getInstance()->getRow(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'crmcycles_order_map`
+             WHERE `id_order` = ' . (int) $orderInvoice->id_order
+        );
+
+        if (!$mapping) {
+            return;
+        }
+
+        require_once __DIR__ . '/classes/CrmCyclesApi.php';
+
+        $api = new CrmCyclesApi();
+        $pdfContent = $api->getInvoicePdf((int) $mapping['crm_invoice_id']);
+
+        if ($pdfContent) {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="facture-' . $mapping['crm_invoice_number'] . '.pdf"');
+            header('Content-Length: ' . strlen($pdfContent));
+            header('Cache-Control: private, max-age=0, must-revalidate');
+            echo $pdfContent;
+            exit;
+        }
+    }
+
+    /**
+     * Retrouver le CRM product_id via le SKU (référence PS).
+     */
+    private function getCarrierName($order): string
+    {
+        $idCarrier = (int) $order->id_carrier;
+        if (!$idCarrier) {
+            return 'Retrait en magasin';
+        }
+
+        $carrier = new Carrier($idCarrier, $this->context->language->id);
+        if (Validate::isLoadedObject($carrier)) {
+            return $carrier->name;
+        }
+
+        return 'Livraison';
+    }
+
+    private function getCrmProductIdBySku(string $sku): int
+    {
+        if (empty($sku)) {
+            return 0;
+        }
+
+        // D'abord dans le mapping produit
+        $crmId = (int) Db::getInstance()->getValue(
+            'SELECT `crm_product_id` FROM `' . _DB_PREFIX_ . 'crmcycles_product_map`
+             WHERE `crm_sku` = "' . pSQL($sku) . '"'
+        );
+
+        if ($crmId) {
+            return $crmId;
+        }
+
+        // Puis dans le mapping combinaison → retrouver le produit parent CRM
+        // (combination_map.crm_product_id = id du serialized_item, pas du produit)
+        $idProduct = (int) Db::getInstance()->getValue(
+            'SELECT `id_product` FROM `' . _DB_PREFIX_ . 'crmcycles_combination_map`
+             WHERE `crm_sku` = "' . pSQL($sku) . '"'
+        );
+
+        if ($idProduct) {
+            // Retrouver le CRM product_id via le produit PS parent
+            $crmId = (int) Db::getInstance()->getValue(
+                'SELECT `crm_product_id` FROM `' . _DB_PREFIX_ . 'crmcycles_product_map`
+                 WHERE `id_product` = ' . $idProduct
+            );
+            return $crmId;
+        }
+
+        return 0;
     }
 }

@@ -77,6 +77,18 @@ CREATE TABLE IF NOT EXISTS `PREFIX_marquage_category_feature` (
     UNIQUE KEY `uk_category_feature` (`id_category`, `id_feature`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_order_map` (
+    `id_crmcycles_order_map` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `id_order` INT(11) UNSIGNED NOT NULL,
+    `crm_customer_id` INT(11) UNSIGNED NOT NULL,
+    `crm_invoice_id` INT(11) UNSIGNED NOT NULL,
+    `crm_invoice_number` VARCHAR(50) DEFAULT NULL,
+    `date_add` DATETIME NOT NULL,
+    PRIMARY KEY (`id_crmcycles_order_map`),
+    UNIQUE KEY `id_order` (`id_order`),
+    KEY `crm_invoice_id` (`crm_invoice_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_sync_log` (
     `id_crmcycles_sync_log` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
     `sync_type` VARCHAR(50) NOT NULL COMMENT 'full, categories, products, prices_stock, features',

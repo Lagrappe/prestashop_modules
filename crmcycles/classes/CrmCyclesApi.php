@@ -77,6 +77,55 @@ class CrmCyclesApi
     }
 
     /**
+     * Create or find customer in CRM
+     */
+    public function createCustomer(array $data): array
+    {
+        return $this->post('/shop/create-customer', $data);
+    }
+
+    /**
+     * Create order/invoice in CRM
+     */
+    public function createOrder(array $data): array
+    {
+        return $this->post('/shop/create-order', $data);
+    }
+
+    /**
+     * Get invoice PDF content from CRM
+     */
+    public function getInvoicePdf(int $invoiceId): ?string
+    {
+        $url = $this->apiUrl . '/api/v1/shop/invoices/' . $invoiceId . '/pdf';
+
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_SSL_VERIFYPEER => !$this->devMode,
+            CURLOPT_SSL_VERIFYHOST => $this->devMode ? 0 : 2,
+            CURLOPT_HTTPHEADER => [
+                'X-Api-Secret: ' . $this->apiSecret,
+                'X-Store-Key: ' . $this->storeKey,
+            ],
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        curl_close($ch);
+
+        if ($httpCode === 200 && strpos($contentType, 'application/pdf') !== false) {
+            return $response;
+        }
+
+        return null;
+    }
+
+    /**
      * Fetch all products across all pages
      */
     public function getAllProducts(bool $allProducts = false): array
@@ -110,9 +159,26 @@ class CrmCyclesApi
         return $this->request('GET', $url);
     }
 
-    private function request(string $method, string $url): array
+    private function post(string $endpoint, array $data = []): array
+    {
+        $url = $this->apiUrl . '/api/v1' . $endpoint;
+        return $this->request('POST', $url, $data);
+    }
+
+    private function request(string $method, string $url, array $postData = []): array
     {
         $ch = curl_init();
+
+        $headers = [
+            'X-Api-Secret: ' . $this->apiSecret,
+            'X-Store-Key: ' . $this->storeKey,
+            'Accept: application/json',
+            'Accept-Language: fr-FR',
+        ];
+
+        if ($method === 'POST' && !empty($postData)) {
+            $headers[] = 'Content-Type: application/json';
+        }
 
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
@@ -121,16 +187,14 @@ class CrmCyclesApi
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_SSL_VERIFYPEER => !$this->devMode,
             CURLOPT_SSL_VERIFYHOST => $this->devMode ? 0 : 2,
-            CURLOPT_HTTPHEADER => [
-                'X-Api-Secret: ' . $this->apiSecret,
-                'X-Store-Key: ' . $this->storeKey,
-                'Accept: application/json',
-                'Accept-Language: fr-FR',
-            ],
+            CURLOPT_HTTPHEADER => $headers,
         ]);
 
         if ($method !== 'GET') {
             curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+            if (!empty($postData)) {
+                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+            }
         }
 
         $response = curl_exec($ch);

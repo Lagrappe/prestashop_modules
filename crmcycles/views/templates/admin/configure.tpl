@@ -76,6 +76,14 @@
                 </div>
             </div>
             <div class="form-group">
+                <label class="control-label col-lg-3">URL du portail client</label>
+                <div class="col-lg-6">
+                    <input type="url" name="CRMCYCLES_PORTAL_URL" value="{$portal_url|escape:'html':'UTF-8'}"
+                           class="form-control" placeholder="https://boutique.cycle-x.dev/portal">
+                    <p class="help-block">URL du portail client CRM Cycles. Affiche un lien "Mon espace Cycle X" dans le compte client PrestaShop. Laisser vide pour désactiver.</p>
+                </div>
+            </div>
+            <div class="form-group">
                 <label class="control-label col-lg-3">Catégorie parente d'import</label>
                 <div class="col-lg-6">
                     <select name="CRMCYCLES_ROOT_CATEGORY" class="form-control">
@@ -87,6 +95,21 @@
                         {/foreach}
                     </select>
                     <p class="help-block">Les familles CRM seront créées comme sous-catégories de cette catégorie</p>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="control-label col-lg-3">Facturation CRM Cycles</label>
+                <div class="col-lg-6">
+                    <span class="switch prestashop-switch fixed-width-lg">
+                        <input type="radio" name="CRMCYCLES_INVOICE_OVERRIDE" id="CRMCYCLES_INVOICE_OVERRIDE_on" value="1"
+                            {if $invoice_override}checked="checked"{/if}>
+                        <label for="CRMCYCLES_INVOICE_OVERRIDE_on">Oui</label>
+                        <input type="radio" name="CRMCYCLES_INVOICE_OVERRIDE" id="CRMCYCLES_INVOICE_OVERRIDE_off" value="0"
+                            {if !$invoice_override}checked="checked"{/if}>
+                        <label for="CRMCYCLES_INVOICE_OVERRIDE_off">Non</label>
+                        <a class="slide-button btn"></a>
+                    </span>
+                    <p class="help-block">Crée automatiquement le client et la facture dans CRM Cycles à chaque commande validée. Le PDF facture CRM remplace le PDF PrestaShop.</p>
                 </div>
             </div>
             <div class="form-group">
@@ -453,6 +476,21 @@
         $log.scrollTop($log[0].scrollHeight);
     }
 
+    async function endSyncLog(logId, stats, syncType) {
+        if (!logId) return;
+        var status = stats.errors > 0 ? 'error' : 'success';
+        var summary = '';
+        if (syncType === 'prices_stock') {
+            summary = stats.updated + ' mis à jour, ' + (stats.promos || 0) + ' promos, '
+                + (stats.not_found || 0) + ' non trouvés, ' + stats.errors + ' erreurs';
+        } else {
+            summary = stats.products + ' produits, ' + stats.combinations + ' déclinaisons, ' + stats.errors + ' erreurs';
+        }
+        try {
+            await ajaxCrm({ action_crm: 'endSyncLog', log_id: logId, status: status, summary: summary });
+        } catch(e) {}
+    }
+
     function finishProgress(stats) {
         $('#import-progress-bar')
             .removeClass('active')
@@ -467,8 +505,13 @@
 
     async function importProducts(withCategories) {
         var stats = { products: 0, combinations: 0, errors: 0 };
+        var syncType = withCategories ? 'full' : 'products';
         var title = withCategories ? 'Synchronisation complète' : 'Import des produits';
         showProgress(title);
+
+        // Start sync log
+        var logStart = await ajaxCrm({ action_crm: 'startSyncLog', sync_type: syncType });
+        var logId = logStart.log_id || 0;
 
         // Step 1: categories (if full sync)
         if (withCategories) {
@@ -490,12 +533,14 @@
         } catch(e) {
             addLog('Erreur: impossible de récupérer la liste', true);
             stats.errors++;
+            await endSyncLog(logId, stats, syncType);
             finishProgress(stats);
             return;
         }
 
         if (!queueResult.success || !queueResult.queue || queueResult.queue.length === 0) {
             addLog(queueResult.message || 'Aucun produit à importer', true);
+            await endSyncLog(logId, stats, syncType);
             finishProgress(stats);
             return;
         }
@@ -544,6 +589,7 @@
             }
         }
 
+        await endSyncLog(logId, stats, syncType);
         finishProgress(stats);
     }
 
@@ -553,6 +599,10 @@
 
         $('#btn-sync-prices').prop('disabled', true);
 
+        // Start sync log
+        var logStart = await ajaxCrm({ action_crm: 'startSyncLog', sync_type: 'prices_stock' });
+        var logId = logStart.log_id || 0;
+
         // Step 1: fetch queue
         $('#import-progress-status').text('Récupération de la liste des produits...');
         var queueResult;
@@ -561,12 +611,14 @@
         } catch(e) {
             addLog('Erreur: impossible de récupérer la liste', true);
             stats.errors++;
+            await endSyncLog(logId, stats, 'prices_stock');
             finishPriceSync(stats);
             return;
         }
 
         if (!queueResult.success || !queueResult.queue || queueResult.queue.length === 0) {
             addLog(queueResult.message || 'Aucun produit à synchroniser', true);
+            await endSyncLog(logId, stats, 'prices_stock');
             finishPriceSync(stats);
             return;
         }
@@ -607,6 +659,7 @@
             }
         }
 
+        await endSyncLog(logId, stats, 'prices_stock');
         finishPriceSync(stats);
     }
 
