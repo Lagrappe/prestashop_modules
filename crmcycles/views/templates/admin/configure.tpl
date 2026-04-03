@@ -150,7 +150,7 @@
         </div>
         <div class="panel-body" id="marquage-panel-body" style="display: none;">
             <div class="alert alert-info">
-                <strong>Fonctionnalités intégrées depuis le module Marquage :</strong>
+                <strong>Fonctionnalités Marquage antivol :</strong>
                 <ul style="margin-top: 8px; margin-bottom: 0;">
                     <li><strong>Produit de marquage automatique</strong> — Associez un produit de marquage (antivol, gravage...) à une catégorie.
                         Quand un client ajoute un produit de cette catégorie au panier, le produit de marquage est automatiquement ajouté
