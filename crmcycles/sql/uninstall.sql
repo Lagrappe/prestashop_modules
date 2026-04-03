@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS `PREFIX_marquage_category`;
+DROP TABLE IF EXISTS `PREFIX_marquage_category_feature`;
 DROP TABLE IF EXISTS `PREFIX_crmcycles_category_map`;
 DROP TABLE IF EXISTS `PREFIX_crmcycles_product_map`;
 DROP TABLE IF EXISTS `PREFIX_crmcycles_combination_map`;

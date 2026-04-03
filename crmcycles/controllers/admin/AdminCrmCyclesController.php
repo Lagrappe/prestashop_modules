@@ -42,6 +42,10 @@ class AdminCrmCyclesController extends ModuleAdminController
             $this->processImportFeatures();
         }
 
+        if (Tools::isSubmit('submitGenerateMenu')) {
+            $this->processGenerateMenu();
+        }
+
         $this->context->smarty->assign($this->getTemplateVars());
         $this->setTemplate('configure.tpl');
     }
@@ -66,6 +70,18 @@ class AdminCrmCyclesController extends ModuleAdminController
         // Categories for parent selection (flat list with depth)
         $categories = $this->getCategoryList();
 
+        // Marquage configurations
+        $marquageConfigs = $db->executeS(
+            'SELECT mc.`id_category`, mc.`id_product_marquage`,
+                    cl.`name` AS category_name, pl.`name` AS product_name
+             FROM `' . $prefix . 'marquage_category` mc
+             LEFT JOIN `' . $prefix . 'category_lang` cl
+                ON mc.`id_category` = cl.`id_category` AND cl.`id_lang` = ' . (int) $this->context->language->id . '
+             LEFT JOIN `' . $prefix . 'product_lang` pl
+                ON mc.`id_product_marquage` = pl.`id_product` AND pl.`id_lang` = ' . (int) $this->context->language->id . '
+                AND pl.`id_shop` = ' . (int) $this->context->shop->id
+        ) ?: [];
+
         return [
             'module_dir' => _MODULE_DIR_ . 'crmcycles/',
             'api_url' => Configuration::get('CRMCYCLES_API_URL'),
@@ -80,6 +96,7 @@ class AdminCrmCyclesController extends ModuleAdminController
             'stat_combinations' => $combiCount,
             'stat_features' => $featCount,
             'categories' => $categories,
+            'marquage_configs' => $marquageConfigs,
             'cron_token' => Tools::substr(Tools::hash('crmcycles/cron'), 0, 10),
             'cron_url' => $this->context->link->getModuleLink('crmcycles', 'cron', [
                 'token' => Tools::substr(Tools::hash('crmcycles/cron'), 0, 10),
@@ -145,6 +162,63 @@ class AdminCrmCyclesController extends ModuleAdminController
         foreach ($importer->getLog() as $log) {
             $this->warnings[] = $log;
         }
+    }
+
+    private function processGenerateMenu(): void
+    {
+        $db = Db::getInstance();
+        $prefix = _DB_PREFIX_;
+
+        // Get all family categories from our mapping (top-level items for the menu)
+        $families = $db->executeS(
+            'SELECT cm.`id_category`, cl.`name`
+             FROM `' . $prefix . 'crmcycles_category_map` cm
+             LEFT JOIN `' . $prefix . 'category_lang` cl
+                ON cm.`id_category` = cl.`id_category` AND cl.`id_lang` = ' . (int) $this->context->language->id . '
+             WHERE cm.`crm_type` = "family"
+             ORDER BY cm.`crm_id` ASC'
+        );
+
+        if (empty($families)) {
+            $this->errors[] = $this->l('Aucune famille importée. Importez d\'abord les catégories.');
+            return;
+        }
+
+        // Read current menu items
+        $currentItems = Configuration::get('MOD_BLOCKTOPMENU_ITEMS') ?: '';
+        $currentArray = $currentItems ? explode(',', $currentItems) : [];
+
+        // Build the new items list: keep existing non-CRM items, then add CRM families
+        $crmCatIds = [];
+        foreach ($families as $fam) {
+            $crmCatIds[] = 'CAT' . (int) $fam['id_category'];
+        }
+
+        // Remove any previously added CRM categories to avoid duplicates
+        $allCrmCatIds = $db->executeS(
+            'SELECT `id_category` FROM `' . $prefix . 'crmcycles_category_map`'
+        );
+        $allCrmCatEntries = [];
+        foreach ($allCrmCatIds ?: [] as $row) {
+            $allCrmCatEntries[] = 'CAT' . (int) $row['id_category'];
+        }
+
+        $filteredItems = array_filter($currentArray, function ($item) use ($allCrmCatEntries) {
+            return !in_array($item, $allCrmCatEntries);
+        });
+
+        // Merge: existing items + CRM family categories
+        $newItems = array_merge($filteredItems, $crmCatIds);
+        $newValue = implode(',', array_unique(array_filter($newItems)));
+
+        Configuration::updateValue('MOD_BLOCKTOPMENU_ITEMS', $newValue);
+
+        $familyNames = array_column($families, 'name');
+        $this->confirmations[] = sprintf(
+            $this->l('Menu principal mis à jour avec %d familles : %s'),
+            count($families),
+            implode(', ', $familyNames)
+        );
     }
 
     private function processAjaxAction(): void

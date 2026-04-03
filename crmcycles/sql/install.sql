@@ -61,6 +61,22 @@ CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_feature_value_map` (
     KEY `id_feature_value` (`id_feature_value`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `PREFIX_marquage_category` (
+    `id_marquage` INT(11) NOT NULL AUTO_INCREMENT,
+    `id_category` INT(11) UNSIGNED NOT NULL,
+    `id_product_marquage` INT(11) UNSIGNED NOT NULL,
+    PRIMARY KEY (`id_marquage`),
+    UNIQUE KEY `uk_category` (`id_category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `PREFIX_marquage_category_feature` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `id_category` INT(11) UNSIGNED NOT NULL,
+    `id_feature` INT(11) UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_category_feature` (`id_category`, `id_feature`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_sync_log` (
     `id_crmcycles_sync_log` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
     `sync_type` VARCHAR(50) NOT NULL COMMENT 'full, categories, products, prices_stock, features',

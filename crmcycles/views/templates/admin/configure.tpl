@@ -117,6 +117,61 @@
         </form>
     </div>
 
+    {* Marquage & Caractéristiques par défaut *}
+    <div class="panel">
+        <div class="panel-heading" style="cursor: pointer;" id="marquage-panel-heading">
+            <i class="icon-tag"></i> Marquage antivol & Caractéristiques par défaut
+            <span class="pull-right">
+                <i id="marquage-toggle-icon" class="icon-chevron-down"></i>
+            </span>
+        </div>
+        <div class="panel-body" id="marquage-panel-body" style="display: none;">
+            <div class="alert alert-info">
+                <strong>Fonctionnalités intégrées depuis le module Marquage :</strong>
+                <ul style="margin-top: 8px; margin-bottom: 0;">
+                    <li><strong>Produit de marquage automatique</strong> — Associez un produit de marquage (antivol, gravage...) à une catégorie.
+                        Quand un client ajoute un produit de cette catégorie au panier, le produit de marquage est automatiquement ajouté
+                        avec la même quantité. Il est retiré si le produit est supprimé du panier.</li>
+                    <li><strong>Caractéristiques par défaut</strong> — Associez des caractéristiques (features) à une catégorie.
+                        Quand un nouveau produit est créé dans cette catégorie, les caractéristiques sont automatiquement pré-ajoutées
+                        au formulaire produit (vides, à remplir). Le JS back-office ajoute aussi dynamiquement les caractéristiques
+                        quand on change de catégorie sur la page produit.</li>
+                </ul>
+            </div>
+            <div class="alert alert-warning">
+                <i class="icon-info-circle"></i>
+                La configuration du marquage et des caractéristiques par défaut se fait directement dans
+                <strong>l'édition de chaque catégorie</strong>.
+                Deux champs apparaissent en bas du formulaire : <em>Produit de marquage</em> et <em>Caractéristiques par défaut</em>.
+                <br><br>
+                <a href="{$link->getAdminLink('AdminCategories')}" class="btn btn-default btn-sm">
+                    <i class="icon-sitemap"></i> Gérer les catégories
+                </a>
+            </div>
+            {if $marquage_configs|@count > 0}
+                <h4>Catégories avec marquage configuré</h4>
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Catégorie</th>
+                            <th>Produit de marquage</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {foreach $marquage_configs as $mc}
+                            <tr>
+                                <td>{$mc.category_name|escape:'html':'UTF-8'}</td>
+                                <td>{$mc.product_name|escape:'html':'UTF-8'} (ID: {$mc.id_product_marquage})</td>
+                            </tr>
+                        {/foreach}
+                    </tbody>
+                </table>
+            {else}
+                <p class="text-muted">Aucun produit de marquage configuré pour le moment.</p>
+            {/if}
+        </div>
+    </div>
+
     {* Import actions *}
     <div class="panel">
         <div class="panel-heading">
@@ -135,6 +190,14 @@
                         <button type="submit" name="submitImportCategories" class="btn btn-info btn-block">
                             <i class="icon-sitemap"></i> Importer les catégories
                         </button>
+                    </form>
+                    <form method="post" style="margin-bottom: 10px;">
+                        <button type="submit" name="submitGenerateMenu" class="btn btn-info btn-block">
+                            <i class="icon-list"></i> Générer le menu principal
+                        </button>
+                        <p class="help-block text-muted" style="margin-top: 5px;">
+                            Ajoute les familles importées au menu principal (module ps_mainmenu)
+                        </p>
                     </form>
                     <form method="post" style="margin-bottom: 10px;">
                         <button type="submit" name="submitImportFeatures" class="btn btn-info btn-block">
@@ -332,6 +395,12 @@
         var $btn = $(this);
         $btn.find('i').removeClass('icon-copy').addClass('icon-check');
         setTimeout(function() { $btn.find('i').removeClass('icon-check').addClass('icon-copy'); }, 1500);
+    });
+
+    // Marquage panel toggle
+    $('#marquage-panel-heading').on('click', function() {
+        $('#marquage-panel-body').slideToggle(200);
+        $('#marquage-toggle-icon').toggleClass('icon-chevron-up icon-chevron-down');
     });
 
     // Cron panel toggle
