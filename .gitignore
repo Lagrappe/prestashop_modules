@@ -1,0 +1,7 @@
+# Ignore everything
+/*
+
+# Except our custom modules
+!/marquage/
+!/crmcycles/
+!/.gitignore
