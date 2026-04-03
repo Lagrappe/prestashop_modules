@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<module>
+    <name>marquage</name>
+    <displayName><![CDATA[Marquage antivol et caractéristiques des catégories]]></displayName>
+    <version><![CDATA[1.0.0]]></version>
+    <description><![CDATA[Ajoute automatiquement un produit de marquage au panier pour chaque produit d'une catégorie configurée et associe des caractéristiques par défaut aux nouveaux produits.]]></description>
+    <author><![CDATA[Seb Gemeline]]></author>
+    <tab><![CDATA[front_office_features]]></tab>
+    <is_configurable>0</is_configurable>
+    <need_instance>0</need_instance>
+    <limited_countries></limited_countries>
+</module>
