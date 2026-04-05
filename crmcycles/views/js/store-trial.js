@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   var toggleBtn = document.getElementById('crmcycles-trial-toggle');
   var formWrapper = document.getElementById('crmcycles-trial-form-wrapper');
-  var form = document.getElementById('crmcycles-trial-form');
+  var formDiv = document.getElementById('crmcycles-trial-form');
   var cancelBtn = document.getElementById('crmcycles-trial-cancel');
   var submitBtn = document.getElementById('crmcycles-trial-submit');
   var messageDiv = document.getElementById('crmcycles-trial-message');
@@ -13,35 +13,43 @@ document.addEventListener('DOMContentLoaded', function () {
   var token = container.dataset.token;
   var idProduct = parseInt(container.dataset.idProduct, 10);
 
+  // Field references
+  var fields = {
+    trial_lastname: document.getElementById('trial_lastname'),
+    trial_firstname: document.getElementById('trial_firstname'),
+    trial_email: document.getElementById('trial_email'),
+    trial_phone: document.getElementById('trial_phone'),
+    trial_date: document.getElementById('trial_date')
+  };
+
+  function resetFields() {
+    for (var key in fields) {
+      if (fields[key]) fields[key].value = '';
+    }
+  }
+
   // Show/hide based on stock availability of selected combination
   function updateVisibility() {
-    // PrestaShop stores availability in #product-availability
     var availEl = document.getElementById('product-availability');
     if (!availEl) {
       container.style.display = '';
       return;
     }
 
-    // Check if the product is available by looking at the icon
     var icon = availEl.querySelector('.material-icons');
     if (icon) {
       var iconText = icon.textContent.trim();
-      // check_circle (&#xE5CA;) = available, warning (&#xE002;) = last items
-      // cancel (&#xE14B;) = unavailable
       if (iconText === '\uE5CA' || iconText === '\uE002' || iconText === 'check_circle' || iconText === 'warning') {
         container.style.display = '';
       } else {
         container.style.display = 'none';
       }
     } else {
-      // Fallback: if there's text and no "unavailable" class indicator
       container.style.display = '';
     }
   }
 
-  // Get current combination id_product_attribute
   function getSelectedCombinationId() {
-    // PrestaShop adds id_product_attribute to add-to-cart form
     var input = document.querySelector(
       '#add-to-cart-or-refresh input[name="id_product_attribute"], ' +
       'form.add-to-cart input[name="id_product_attribute"]'
@@ -69,33 +77,42 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Toggle form
-  toggleBtn.addEventListener('click', function () {
+  toggleBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
     if (formWrapper.style.display === 'none') {
       formWrapper.style.display = '';
       toggleBtn.style.display = 'none';
     }
   });
 
-  cancelBtn.addEventListener('click', function () {
+  cancelBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
     formWrapper.style.display = 'none';
     toggleBtn.style.display = '';
     messageDiv.style.display = 'none';
-    form.reset();
+    resetFields();
   });
 
-  // Submit
-  form.addEventListener('submit', function (e) {
+  // Submit via button click (no <form>, no submit event)
+  submitBtn.addEventListener('click', function (e) {
     e.preventDefault();
+    e.stopPropagation();
 
     messageDiv.style.display = 'none';
     submitBtn.disabled = true;
     submitBtn.textContent = 'Envoi en cours...';
 
-    var formData = new FormData(form);
+    var formData = new FormData();
     formData.append('submitStoreTrial', '1');
     formData.append('token', token);
     formData.append('id_product', idProduct);
     formData.append('id_product_attribute', getSelectedCombinationId());
+
+    for (var key in fields) {
+      formData.append(key, fields[key] ? fields[key].value : '');
+    }
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', action, true);
@@ -112,8 +129,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (resp.success) {
           messageDiv.className = 'crmcycles-trial-message success';
-          form.reset();
-          // Hide form after success
+          resetFields();
           setTimeout(function () {
             formWrapper.style.display = 'none';
             toggleBtn.style.display = '';

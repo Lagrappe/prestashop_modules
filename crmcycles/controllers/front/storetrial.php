@@ -8,8 +8,6 @@ class CrmCyclesStoreTrialModuleFrontController extends ModuleFrontController
 {
     public function initContent()
     {
-        parent::initContent();
-
         if (!$this->isTokenValid()) {
             $this->ajaxResponse(['success' => false, 'message' => 'Token invalide.']);
         }
@@ -195,7 +193,7 @@ class CrmCyclesStoreTrialModuleFrontController extends ModuleFrontController
         }
     }
 
-    private function isTokenValid(): bool
+    public function isTokenValid(): bool
     {
         $token = Tools::getValue('token');
         return !empty($token) && $token === Tools::getToken(false);
