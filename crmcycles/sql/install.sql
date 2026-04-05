@@ -89,6 +89,29 @@ CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_order_map` (
     KEY `crm_invoice_id` (`crm_invoice_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_trial_category` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `id_category` INT(11) UNSIGNED NOT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_category` (`id_category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_store_trial` (
+    `id_store_trial` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+    `id_product` INT(11) UNSIGNED NOT NULL,
+    `id_product_attribute` INT(11) UNSIGNED NOT NULL DEFAULT 0,
+    `firstname` VARCHAR(100) NOT NULL,
+    `lastname` VARCHAR(100) NOT NULL,
+    `email` VARCHAR(255) NOT NULL,
+    `phone` VARCHAR(32) NOT NULL,
+    `desired_date` DATE NOT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending, confirmed, done, cancelled',
+    `date_add` DATETIME NOT NULL,
+    PRIMARY KEY (`id_store_trial`),
+    KEY `id_product` (`id_product`),
+    KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `PREFIX_crmcycles_sync_log` (
     `id_crmcycles_sync_log` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
     `sync_type` VARCHAR(50) NOT NULL COMMENT 'full, categories, products, prices_stock, features',

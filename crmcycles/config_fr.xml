@@ -2,7 +2,7 @@
 <module>
     <name>crmcycles</name>
     <displayName><![CDATA[CRM Cycles]]></displayName>
-    <version><![CDATA[1.1.0]]></version>
+    <version><![CDATA[1.3.0]]></version>
     <description><![CDATA[Importation et synchronisation des produits depuis CRM Cycles. Inclut le marquage antivol et les caract&eacute;ristiques par d&eacute;faut des cat&eacute;gories.]]></description>
     <author><![CDATA[Cycle X]]></author>
     <tab><![CDATA[administration]]></tab>

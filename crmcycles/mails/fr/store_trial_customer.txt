@@ -1,0 +1,13 @@
+Demande d'essai en magasin
+
+Bonjour {firstname} {lastname},
+
+Nous avons bien reçu votre demande d'essai en magasin pour le produit suivant :
+
+Produit : {product_name}
+Date souhaitée : {desired_date}
+
+Nous vous recontacterons prochainement pour confirmer votre rendez-vous.
+
+À très bientôt,
+{shop_name}

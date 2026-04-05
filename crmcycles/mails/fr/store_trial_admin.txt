@@ -1,0 +1,11 @@
+Nouvelle demande d'essai en magasin
+
+Un client souhaite essayer un produit en magasin :
+
+Nom : {lastname} {firstname}
+Email : {email}
+Téléphone : {phone}
+Produit : {product_name}
+Date souhaitée : {desired_date}
+
+Pensez à recontacter le client pour confirmer le rendez-vous.

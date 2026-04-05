@@ -4,6 +4,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+use Symfony\Component\Form\Extension\Core\Type\CheckboxType;
 use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\FormBuilderInterface;
 
@@ -15,7 +16,7 @@ class CrmCycles extends Module
     {
         $this->name = 'crmcycles';
         $this->tab = 'administration';
-        $this->version = '1.1.0';
+        $this->version = '1.3.0';
         $this->author = 'Cycle X';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = ['min' => '8.0.0', 'max' => '8.99.99'];
@@ -48,6 +49,8 @@ class CrmCycles extends Module
             && $this->registerHook('actionValidateOrder')
             && $this->registerHook('actionSetInvoice')
             && $this->registerHook('actionPDFInvoiceRender')
+            && $this->registerHook('displayProductAdditionalInfo')
+            && $this->registerHook('actionFrontControllerSetMedia')
             && Configuration::updateValue('CRMCYCLES_API_URL', '')
             && Configuration::updateValue('CRMCYCLES_API_SECRET', '')
             && Configuration::updateValue('CRMCYCLES_STORE_KEY', 'guidel')
@@ -71,6 +74,13 @@ class CrmCycles extends Module
             && Configuration::deleteByName('CRMCYCLES_ROOT_CATEGORY')
             && Configuration::deleteByName('CRMCYCLES_DEV_MODE')
             && Configuration::deleteByName('CRMCYCLES_LAST_SYNC')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_ENABLED')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_DESCRIPTION')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_ONLY_INSTOCK')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_MERCHANT_ID')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_COUNTRY')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_CREDENTIALS')
+            && Configuration::deleteByName('CRMCYCLES_GMERCHANT_TOKEN')
             && parent::uninstall();
     }
 
@@ -172,7 +182,7 @@ class CrmCycles extends Module
             'required' => false,
             'data' => $currentProductId,
             'attr' => ['class' => 'custom-select'],
-            'help' => $this->l('Le produit sélectionné sera automatiquement ajouté au panier pour chaque produit de cette catégorie.'),
+            'help' => $this->l('Marquage antivol : le produit sélectionné sera automatiquement ajouté au panier (en quantité identique) pour chaque article de cette catégorie acheté par le client. Sélectionnez « Aucun » pour désactiver.'),
         ]);
 
         $params['data']['id_product_marquage'] = $currentProductId;
@@ -194,10 +204,22 @@ class CrmCycles extends Module
             'expanded' => false,
             'data' => $currentFeatures,
             'attr' => ['class' => 'custom-select', 'size' => 10],
-            'help' => $this->l('Les caractéristiques sélectionnées seront automatiquement ajoutées aux nouveaux produits créés dans cette catégorie.'),
+            'help' => $this->l('Les caractéristiques sélectionnées seront automatiquement pré-remplies (valeur vide) lors de la création d\'un nouveau produit dans cette catégorie. Utilisez Ctrl+clic pour sélectionner plusieurs caractéristiques.'),
         ]);
 
         $params['data']['default_features'] = $currentFeatures;
+
+        // --- Essai en magasin ---
+        $trialEnabled = $this->isTrialCategory($categoryId);
+
+        $formBuilder->add('trial_in_store', CheckboxType::class, [
+            'label' => $this->l('Essai en magasin'),
+            'required' => false,
+            'data' => $trialEnabled,
+            'help' => $this->l('Si coché, un bouton « Essayer en magasin » apparaît sur les fiches produits de cette catégorie lorsque la déclinaison sélectionnée est en stock. Le client peut alors remplir un formulaire (nom, prénom, email, téléphone, date souhaitée) pour planifier un essai. Un email de confirmation est envoyé au client et une notification à l\'adresse du magasin.'),
+        ]);
+
+        $params['data']['trial_in_store'] = $trialEnabled;
     }
 
     public function hookActionAfterCreateCategoryFormHandler(array $params): void
@@ -244,6 +266,16 @@ class CrmCycles extends Module
                     ]);
                 }
             }
+        }
+
+        // --- Essai en magasin ---
+        Db::getInstance()->delete('crmcycles_trial_category', 'id_category = ' . $categoryId);
+
+        $trialEnabled = !empty($formData['trial_in_store']);
+        if ($trialEnabled) {
+            Db::getInstance()->insert('crmcycles_trial_category', [
+                'id_category' => $categoryId,
+            ]);
         }
     }
 
@@ -506,6 +538,82 @@ class CrmCycles extends Module
         }
 
         return $mappings;
+    }
+
+    // =========================================================================
+    // ESSAI EN MAGASIN : affichage front produit
+    // =========================================================================
+
+    private function isTrialCategory(int $categoryId): bool
+    {
+        if ($categoryId <= 0) {
+            return false;
+        }
+
+        return (bool) Db::getInstance()->getValue(
+            'SELECT 1 FROM `' . _DB_PREFIX_ . 'crmcycles_trial_category`
+             WHERE `id_category` = ' . $categoryId
+        );
+    }
+
+    private function productHasTrialCategory(int $idProduct): bool
+    {
+        if ($idProduct <= 0) {
+            return false;
+        }
+
+        return (bool) Db::getInstance()->getValue(
+            'SELECT 1
+             FROM `' . _DB_PREFIX_ . 'category_product` cp
+             INNER JOIN `' . _DB_PREFIX_ . 'crmcycles_trial_category` tc
+                ON cp.`id_category` = tc.`id_category`
+             WHERE cp.`id_product` = ' . $idProduct
+        );
+    }
+
+    public function hookActionFrontControllerSetMedia(array $params): void
+    {
+        $controller = $this->context->controller;
+        if (!($controller instanceof ProductControllerCore) && Tools::getValue('controller') !== 'product') {
+            return;
+        }
+
+        $this->context->controller->registerStylesheet(
+            'crmcycles-store-trial',
+            'modules/' . $this->name . '/views/css/store-trial.css',
+            ['media' => 'all', 'priority' => 200]
+        );
+
+        $this->context->controller->registerJavascript(
+            'crmcycles-store-trial',
+            'modules/' . $this->name . '/views/js/store-trial.js',
+            ['position' => 'bottom', 'priority' => 200]
+        );
+    }
+
+    public function hookDisplayProductAdditionalInfo(array $params): string
+    {
+        $product = $params['product'] ?? null;
+        if (!$product) {
+            return '';
+        }
+
+        $idProduct = (int) ($product['id_product'] ?? $product->id ?? 0);
+        if (!$idProduct || !$this->productHasTrialCategory($idProduct)) {
+            return '';
+        }
+
+        $this->context->smarty->assign([
+            'crmcycles_trial_action' => $this->context->link->getModuleLink(
+                $this->name, 'storetrial', [], true
+            ),
+            'crmcycles_trial_token' => Tools::getToken(false),
+            'crmcycles_trial_id_product' => $idProduct,
+        ]);
+
+        return $this->context->smarty->fetch(
+            'module:crmcycles/views/templates/front/store-trial-button.tpl'
+        );
     }
 
     // =========================================================================

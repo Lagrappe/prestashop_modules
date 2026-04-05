@@ -143,14 +143,14 @@
     {* Marquage & Caractéristiques par défaut *}
     <div class="panel">
         <div class="panel-heading" style="cursor: pointer;" id="marquage-panel-heading">
-            <i class="icon-tag"></i> Marquage antivol & Caractéristiques par défaut
+            <i class="icon-tag"></i> Marquage antivol, Caractéristiques par défaut & Essai en magasin
             <span class="pull-right">
                 <i id="marquage-toggle-icon" class="icon-chevron-down"></i>
             </span>
         </div>
         <div class="panel-body" id="marquage-panel-body" style="display: none;">
             <div class="alert alert-info">
-                <strong>Fonctionnalités Marquage antivol :</strong>
+                <strong>Fonctionnalités par catégorie :</strong>
                 <ul style="margin-top: 8px; margin-bottom: 0;">
                     <li><strong>Produit de marquage automatique</strong> — Associez un produit de marquage (antivol, gravage...) à une catégorie.
                         Quand un client ajoute un produit de cette catégorie au panier, le produit de marquage est automatiquement ajouté
@@ -159,18 +159,25 @@
                         Quand un nouveau produit est créé dans cette catégorie, les caractéristiques sont automatiquement pré-ajoutées
                         au formulaire produit (vides, à remplir). Le JS back-office ajoute aussi dynamiquement les caractéristiques
                         quand on change de catégorie sur la page produit.</li>
+                    <li><strong>Essai en magasin</strong> — Activez cette option sur une catégorie pour afficher un bouton
+                        « Essayer en magasin » sur les fiches produits <strong>en stock</strong> de cette catégorie.
+                        Le bouton apparaît uniquement quand la déclinaison sélectionnée est disponible.
+                        Le client remplit un formulaire (nom, prénom, email, téléphone, date souhaitée) et reçoit un email de confirmation.
+                        Un email de notification est également envoyé à l'adresse du magasin ({Configuration::get('PS_SHOP_EMAIL')}).</li>
                 </ul>
             </div>
             <div class="alert alert-warning">
                 <i class="icon-info-circle"></i>
-                La configuration du marquage et des caractéristiques par défaut se fait directement dans
-                <strong>l'édition de chaque catégorie</strong>.
-                Deux champs apparaissent en bas du formulaire : <em>Produit de marquage</em> et <em>Caractéristiques par défaut</em>.
+                La configuration se fait directement dans <strong>l'édition de chaque catégorie</strong>.
+                Trois champs apparaissent en bas du formulaire : <em>Produit de marquage</em>, <em>Caractéristiques par défaut</em>
+                et <em>Essai en magasin</em>.
                 <br><br>
                 <a href="{$link->getAdminLink('AdminCategories')}" class="btn btn-default btn-sm">
                     <i class="icon-sitemap"></i> Gérer les catégories
                 </a>
             </div>
+
+            {* Marquage configs *}
             {if $marquage_configs|@count > 0}
                 <h4>Catégories avec marquage configuré</h4>
                 <table class="table table-striped">
@@ -192,15 +199,67 @@
             {else}
                 <p class="text-muted">Aucun produit de marquage configuré pour le moment.</p>
             {/if}
+
+            {* Trial categories *}
+            <h4 style="margin-top: 20px;">Catégories avec essai en magasin activé</h4>
+            {if $trial_categories|@count > 0}
+                <ul>
+                    {foreach $trial_categories as $tc}
+                        <li>{$tc.category_name|escape:'html':'UTF-8'}</li>
+                    {/foreach}
+                </ul>
+            {else}
+                <p class="text-muted">Aucune catégorie avec essai en magasin pour le moment.</p>
+            {/if}
+
+            {* Recent trial requests *}
+            {if $trial_requests|@count > 0}
+                <h4 style="margin-top: 20px;">Dernières demandes d'essai</h4>
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Client</th>
+                            <th>Email</th>
+                            <th>Téléphone</th>
+                            <th>Produit</th>
+                            <th>Date souhaitée</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {foreach $trial_requests as $tr}
+                            <tr>
+                                <td>{$tr.date_add|date_format:'%d/%m/%Y %H:%M'}</td>
+                                <td>{$tr.firstname|escape:'html':'UTF-8'} {$tr.lastname|escape:'html':'UTF-8'}</td>
+                                <td><a href="mailto:{$tr.email|escape:'html':'UTF-8'}">{$tr.email|escape:'html':'UTF-8'}</a></td>
+                                <td>{$tr.phone|escape:'html':'UTF-8'}</td>
+                                <td>{$tr.product_name|escape:'html':'UTF-8'}</td>
+                                <td>{$tr.desired_date|date_format:'%d/%m/%Y'}</td>
+                                <td>
+                                    {if $tr.status == 'pending'}<span class="label label-warning">En attente</span>
+                                    {elseif $tr.status == 'confirmed'}<span class="label label-info">Confirmé</span>
+                                    {elseif $tr.status == 'done'}<span class="label label-success">Effectué</span>
+                                    {elseif $tr.status == 'cancelled'}<span class="label label-danger">Annulé</span>
+                                    {else}<span class="label label-default">{$tr.status}</span>{/if}
+                                </td>
+                            </tr>
+                        {/foreach}
+                    </tbody>
+                </table>
+            {/if}
         </div>
     </div>
 
     {* Import actions *}
     <div class="panel">
-        <div class="panel-heading">
+        <div class="panel-heading" style="cursor: pointer;" id="import-panel-heading">
             <i class="icon-download"></i> Actions d'import / synchronisation
+            <span class="pull-right">
+                <i id="import-toggle-icon" class="icon-chevron-up"></i>
+            </span>
         </div>
-        <div class="panel-body">
+        <div class="panel-body" id="import-panel-body">
             <div class="alert alert-info">
                 <strong>Import complet :</strong> Importe la structure complète (catégories, produits, déclinaisons, caractéristiques).<br>
                 <strong>Prix / Stock uniquement :</strong> Met à jour prix, prix promo et quantités via le SKU. Ne modifie pas la structure.
@@ -359,11 +418,185 @@
         </div>
     </div>
 
+    {* Google Merchant *}
+    <div class="panel">
+        <div class="panel-heading" style="cursor: pointer;" id="gmerchant-panel-heading">
+            <i class="icon-google-plus"></i> Google Merchant Center
+            {if $gmerchant_enabled}
+                <span class="badge badge-success" style="margin-left: 10px; background-color: #72c279;">Activé</span>
+            {/if}
+            <span class="pull-right">
+                <i id="gmerchant-toggle-icon" class="icon-chevron-down"></i>
+            </span>
+        </div>
+        <div class="panel-body" id="gmerchant-panel-body" style="display: none;">
+            <div class="alert alert-info">
+                <strong>Google Merchant Center — deux modes disponibles :</strong>
+                <ul style="margin-top: 8px; margin-bottom: 0;">
+                    <li><strong>Flux XML (pull)</strong> — Google récupère vos produits via une URL à la fréquence configurée dans Merchant Center.</li>
+                    <li><strong>API Content (push)</strong> — Les produits sont envoyés directement à Google via l'API.
+                        Nécessite un <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">compte de service Google</a>
+                        avec l'accès Content API activé et ajouté comme utilisateur dans votre compte Merchant Center.</li>
+                </ul>
+            </div>
+
+            <form method="post" class="form-horizontal">
+                <h4 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">Configuration générale</h4>
+                <div class="form-group">
+                    <label class="control-label col-lg-3">Activer</label>
+                    <div class="col-lg-6">
+                        <span class="switch prestashop-switch fixed-width-lg">
+                            <input type="radio" name="CRMCYCLES_GMERCHANT_ENABLED" id="CRMCYCLES_GMERCHANT_ENABLED_on" value="1"
+                                {if $gmerchant_enabled}checked="checked"{/if}>
+                            <label for="CRMCYCLES_GMERCHANT_ENABLED_on">Oui</label>
+                            <input type="radio" name="CRMCYCLES_GMERCHANT_ENABLED" id="CRMCYCLES_GMERCHANT_ENABLED_off" value="0"
+                                {if !$gmerchant_enabled}checked="checked"{/if}>
+                            <label for="CRMCYCLES_GMERCHANT_ENABLED_off">Non</label>
+                            <a class="slide-button btn"></a>
+                        </span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label col-lg-3">Produits en stock uniquement</label>
+                    <div class="col-lg-6">
+                        <span class="switch prestashop-switch fixed-width-lg">
+                            <input type="radio" name="CRMCYCLES_GMERCHANT_ONLY_INSTOCK" id="CRMCYCLES_GMERCHANT_ONLY_INSTOCK_on" value="1"
+                                {if $gmerchant_only_instock}checked="checked"{/if}>
+                            <label for="CRMCYCLES_GMERCHANT_ONLY_INSTOCK_on">Oui</label>
+                            <input type="radio" name="CRMCYCLES_GMERCHANT_ONLY_INSTOCK" id="CRMCYCLES_GMERCHANT_ONLY_INSTOCK_off" value="0"
+                                {if !$gmerchant_only_instock}checked="checked"{/if}>
+                            <label for="CRMCYCLES_GMERCHANT_ONLY_INSTOCK_off">Non</label>
+                            <a class="slide-button btn"></a>
+                        </span>
+                        <p class="help-block">S'applique au flux XML et au push API.</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label col-lg-3">Description du flux XML</label>
+                    <div class="col-lg-6">
+                        <input type="text" name="CRMCYCLES_GMERCHANT_DESCRIPTION" value="{$gmerchant_description|escape:'html':'UTF-8'}"
+                               class="form-control" placeholder="Nom de la boutique">
+                        <p class="help-block">Description dans l'en-tête du flux XML. Laisser vide pour utiliser le nom de la boutique.</p>
+                    </div>
+                </div>
+
+                <h4 style="border-bottom: 1px solid #eee; padding-bottom: 8px; margin-top: 25px;">Configuration API (push)</h4>
+                <div class="form-group">
+                    <label class="control-label col-lg-3">Merchant ID</label>
+                    <div class="col-lg-6">
+                        <input type="text" name="CRMCYCLES_GMERCHANT_MERCHANT_ID" value="{$gmerchant_merchant_id|escape:'html':'UTF-8'}"
+                               class="form-control" placeholder="123456789">
+                        <p class="help-block">Identifiant numérique de votre compte Google Merchant Center (visible en haut à droite de l'interface).</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label col-lg-3">Pays cible</label>
+                    <div class="col-lg-6">
+                        <input type="text" name="CRMCYCLES_GMERCHANT_COUNTRY" value="{$gmerchant_country|escape:'html':'UTF-8'}"
+                               class="form-control" placeholder="FR" maxlength="2" style="width: 80px;">
+                        <p class="help-block">Code ISO du pays cible (FR, BE, CH, etc.).</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="control-label col-lg-3">Compte de service (JSON)</label>
+                    <div class="col-lg-6">
+                        {if $gmerchant_has_credentials}
+                            <div class="alert alert-success" style="margin-bottom: 10px;">
+                                <i class="icon-check"></i>
+                                Compte de service configuré : <strong>{$gmerchant_service_email|escape:'html':'UTF-8'}</strong>
+                            </div>
+                        {/if}
+                        <textarea name="CRMCYCLES_GMERCHANT_CREDENTIALS_INPUT" class="form-control" rows="4"
+                                  placeholder='Collez ici le contenu du fichier JSON du compte de service Google...'></textarea>
+                        <p class="help-block">
+                            Contenu du fichier JSON téléchargé depuis la
+                            <a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noopener">Console Google Cloud</a>.
+                            {if $gmerchant_has_credentials}Laissez vide pour conserver le compte actuel.{/if}
+                            <br>Le compte de service doit avoir l'accès « Content API » et être ajouté comme utilisateur dans Merchant Center.
+                        </p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="col-lg-offset-3 col-lg-6">
+                        <button type="submit" name="submitGoogleMerchantConfig" class="btn btn-primary">
+                            <i class="icon-save"></i> Sauvegarder
+                        </button>
+                        {if $gmerchant_has_credentials && $gmerchant_merchant_id}
+                            <button type="submit" name="submitTestGoogleMerchant" class="btn btn-default">
+                                <i class="icon-exchange"></i> Tester la connexion
+                            </button>
+                        {/if}
+                    </div>
+                </div>
+            </form>
+
+            <hr>
+
+            {* Push API actions *}
+            {if $gmerchant_enabled && $gmerchant_has_credentials && $gmerchant_merchant_id}
+                <h4>Envoyer les produits via l'API</h4>
+                <p class="text-muted">Pousse tous les produits actifs vers Google Merchant Center via l'API Content for Shopping.</p>
+                <button type="button" id="btn-gm-push-all" class="btn btn-success" style="margin-bottom: 15px;">
+                    <i class="icon-cloud-upload"></i> Envoyer tous les produits à Google
+                </button>
+
+                {* Push progress *}
+                <div id="gm-push-progress" style="display: none; margin-top: 10px;">
+                    <h4 id="gm-push-title">Envoi en cours...</h4>
+                    <div class="progress">
+                        <div id="gm-push-bar" class="progress-bar progress-bar-striped active" role="progressbar"
+                             style="width: 0%; min-width: 30px;">
+                            0%
+                        </div>
+                    </div>
+                    <p id="gm-push-status" class="text-muted"></p>
+                    <div id="gm-push-log" style="max-height: 200px; overflow-y: auto; font-size: 12px; background: #f9f9f9; padding: 8px; border-radius: 4px; display: none;"></div>
+                </div>
+
+                <hr>
+            {/if}
+
+            {* Feed XML (pull) *}
+            <h4>Flux XML (pull)</h4>
+            <div class="form-group">
+                <label><strong>URL du flux Google Shopping</strong></label>
+                <div class="input-group">
+                    <input type="text" class="form-control cron-url-field" readonly
+                           value="{$gmerchant_feed_url|escape:'html':'UTF-8'}">
+                    <span class="input-group-btn">
+                        <button class="btn btn-default btn-copy-cron" type="button"><i class="icon-copy"></i></button>
+                    </span>
+                </div>
+                <p class="help-block" style="margin-top: 8px;">
+                    Copiez cette URL et collez-la dans Google Merchant Center > Produits > Flux > Ajouter un flux > Récupération planifiée.
+                </p>
+            </div>
+
+            {if $gmerchant_enabled}
+                <div class="alert alert-success" style="margin-top: 10px;">
+                    <i class="icon-check"></i>
+                    Le flux XML est actif. <a href="{$gmerchant_feed_url|escape:'html':'UTF-8'}" target="_blank" rel="noopener">Tester le flux</a>
+                </div>
+            {/if}
+
+            <div class="alert alert-warning" style="margin-top: 10px;">
+                <i class="icon-info-circle"></i>
+                <strong>Données exportées par produit :</strong> titre, description, URL, image, prix TTC, prix promo, disponibilité,
+                état (neuf/occasion), marque (fabricant), GTIN (EAN13), MPN (référence), catégorie (breadcrumb).
+                Pour les déclinaisons : chaque combinaison est exportée individuellement avec couleur, taille, image, stock et prix propres.
+            </div>
+        </div>
+    </div>
+
     {* Sync log *}
     <div class="panel">
-        <div class="panel-heading">
+        <div class="panel-heading" style="cursor: pointer;" id="logs-panel-heading">
             <i class="icon-history"></i> Historique des synchronisations
+            <span class="pull-right">
+                <i id="logs-toggle-icon" class="icon-chevron-down"></i>
+            </span>
         </div>
+        <div id="logs-panel-body" style="display: none;">
         {if $sync_logs}
             <table class="table table-striped">
                 <thead>
@@ -404,6 +637,7 @@
                 <p class="text-muted">Aucune synchronisation effectuée.</p>
             </div>
         {/if}
+        </div>
     </div>
 
 </div>
@@ -430,6 +664,24 @@
     $('#cron-panel-heading').on('click', function() {
         $('#cron-panel-body').slideToggle(200);
         $('#cron-toggle-icon').toggleClass('icon-chevron-up icon-chevron-down');
+    });
+
+    // Import panel toggle
+    $('#import-panel-heading').on('click', function() {
+        $('#import-panel-body').slideToggle(200);
+        $('#import-toggle-icon').toggleClass('icon-chevron-up icon-chevron-down');
+    });
+
+    // Logs panel toggle
+    $('#logs-panel-heading').on('click', function() {
+        $('#logs-panel-body').slideToggle(200);
+        $('#logs-toggle-icon').toggleClass('icon-chevron-up icon-chevron-down');
+    });
+
+    // Google Merchant panel toggle
+    $('#gmerchant-panel-heading').on('click', function() {
+        $('#gmerchant-panel-body').slideToggle(200);
+        $('#gmerchant-toggle-icon').toggleClass('icon-chevron-up icon-chevron-down');
     });
 
     // Config panel toggle
@@ -686,6 +938,105 @@
 
     $('#btn-sync-prices').on('click', function() {
         syncPrices();
+    });
+
+    // =================================================================
+    // Google Merchant — Push API
+    // =================================================================
+
+    function gmShowProgress(title) {
+        $('#gm-push-progress').show();
+        $('#gm-push-title').text(title);
+        $('#gm-push-bar').css('width', '0%').text('0%')
+            .addClass('active')
+            .removeClass('progress-bar-success progress-bar-danger');
+        $('#gm-push-status').text('Chargement de la liste...');
+        $('#gm-push-log').empty().hide();
+        $('#btn-gm-push-all').prop('disabled', true);
+    }
+
+    function gmUpdateProgress(current, total, message) {
+        var pct = Math.round((current / total) * 100);
+        $('#gm-push-bar').css('width', pct + '%').text(pct + '%');
+        $('#gm-push-status').text(current + ' / ' + total + ' — ' + message);
+    }
+
+    function gmAddLog(msg, isError) {
+        var $log = $('#gm-push-log');
+        $log.show();
+        var color = isError ? '#c0392b' : '#27ae60';
+        $log.append('<div style="color:' + color + '">' + $('<span>').text(msg).html() + '</div>');
+        $log.scrollTop($log[0].scrollHeight);
+    }
+
+    function gmFinish(stats) {
+        $('#gm-push-bar')
+            .removeClass('active')
+            .addClass(stats.errors > 0 ? 'progress-bar-danger' : 'progress-bar-success')
+            .css('width', '100%').text('100%');
+        $('#gm-push-status').html(
+            '<strong>Terminé</strong> — ' + stats.pushed + ' envoyé(s), ' + stats.errors + ' erreur(s)'
+        );
+        $('#btn-gm-push-all').prop('disabled', false);
+    }
+
+    async function gmPushAll() {
+        var stats = { pushed: 0, errors: 0 };
+        gmShowProgress('Envoi des produits à Google Merchant');
+
+        var queueResult;
+        try {
+            queueResult = await ajaxCrm({ action_crm: 'gmFetchPushQueue' });
+        } catch(e) {
+            gmAddLog('Erreur: impossible de récupérer la liste — ' + e.statusText, true);
+            stats.errors++;
+            gmFinish(stats);
+            return;
+        }
+
+        if (!queueResult.success || !queueResult.queue || queueResult.queue.length === 0) {
+            gmAddLog(queueResult.message || 'Aucun produit à envoyer', true);
+            gmFinish(stats);
+            return;
+        }
+
+        var queue = queueResult.queue;
+        var total = queue.length;
+
+        for (var i = 0; i < total; i++) {
+            var item = queue[i];
+            gmUpdateProgress(i + 1, total, item.name);
+
+            try {
+                var result = await ajaxCrm({
+                    action_crm: 'gmPushSingleProduct',
+                    id_product: item.id_product
+                });
+
+                if (result.success) {
+                    stats.pushed += (result.pushed || 1);
+                    gmAddLog(result.message, false);
+                } else {
+                    stats.errors += (result.errors || 1);
+                    gmAddLog(result.message || item.name + ': Erreur', true);
+                }
+
+                if (result.log && result.log.length) {
+                    for (var j = 0; j < result.log.length; j++) {
+                        gmAddLog('  → ' + result.log[j], true);
+                    }
+                }
+            } catch(e) {
+                stats.errors++;
+                gmAddLog(item.name + ': Erreur réseau — ' + e.statusText, true);
+            }
+        }
+
+        gmFinish(stats);
+    }
+
+    $('#btn-gm-push-all').on('click', function() {
+        gmPushAll();
     });
 })();
 </script>

@@ -6,6 +6,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once _PS_MODULE_DIR_ . 'crmcycles/classes/CrmCyclesApi.php';
 require_once _PS_MODULE_DIR_ . 'crmcycles/classes/CrmCyclesImporter.php';
+require_once _PS_MODULE_DIR_ . 'crmcycles/classes/CrmCyclesGoogleMerchant.php';
 
 class AdminCrmCyclesController extends ModuleAdminController
 {
@@ -49,6 +50,14 @@ class AdminCrmCyclesController extends ModuleAdminController
             $this->processGenerateMenu();
         }
 
+        if (Tools::isSubmit('submitGoogleMerchantConfig')) {
+            $this->processGoogleMerchantConfig();
+        }
+
+        if (Tools::isSubmit('submitTestGoogleMerchant')) {
+            $this->processTestGoogleMerchant();
+        }
+
         $this->context->smarty->assign($this->getTemplateVars());
         $this->setTemplate('configure.tpl');
     }
@@ -85,6 +94,25 @@ class AdminCrmCyclesController extends ModuleAdminController
                 AND pl.`id_shop` = ' . (int) $this->context->shop->id
         ) ?: [];
 
+        // Trial categories
+        $trialCategories = $db->executeS(
+            'SELECT tc.`id_category`, cl.`name` AS category_name
+             FROM `' . $prefix . 'crmcycles_trial_category` tc
+             LEFT JOIN `' . $prefix . 'category_lang` cl
+                ON tc.`id_category` = cl.`id_category` AND cl.`id_lang` = ' . (int) $this->context->language->id . '
+             ORDER BY cl.`name` ASC'
+        ) ?: [];
+
+        // Trial requests (last 20)
+        $trialRequests = $db->executeS(
+            'SELECT st.*, pl.`name` AS product_name
+             FROM `' . $prefix . 'crmcycles_store_trial` st
+             LEFT JOIN `' . $prefix . 'product_lang` pl
+                ON st.`id_product` = pl.`id_product` AND pl.`id_lang` = ' . (int) $this->context->language->id . '
+                AND pl.`id_shop` = ' . (int) $this->context->shop->id . '
+             ORDER BY st.`date_add` DESC LIMIT 20'
+        ) ?: [];
+
         return [
             'module_dir' => _MODULE_DIR_ . 'crmcycles/',
             'api_url' => Configuration::get('CRMCYCLES_API_URL'),
@@ -102,12 +130,24 @@ class AdminCrmCyclesController extends ModuleAdminController
             'stat_features' => $featCount,
             'categories' => $categories,
             'marquage_configs' => $marquageConfigs,
+            'trial_categories' => $trialCategories,
+            'trial_requests' => $trialRequests,
             'cron_token' => Tools::substr(Tools::hash('crmcycles/cron'), 0, 10),
             'cron_url' => $this->context->link->getModuleLink('crmcycles', 'cron', [
                 'token' => Tools::substr(Tools::hash('crmcycles/cron'), 0, 10),
             ]),
             'ajax_url' => $this->context->link->getAdminLink('AdminCrmCycles'),
             'token' => Tools::getAdminTokenLite('AdminCrmCycles'),
+            'gmerchant_enabled' => (int) Configuration::get('CRMCYCLES_GMERCHANT_ENABLED'),
+            'gmerchant_description' => Configuration::get('CRMCYCLES_GMERCHANT_DESCRIPTION') ?: '',
+            'gmerchant_only_instock' => (int) Configuration::get('CRMCYCLES_GMERCHANT_ONLY_INSTOCK'),
+            'gmerchant_merchant_id' => Configuration::get('CRMCYCLES_GMERCHANT_MERCHANT_ID') ?: '',
+            'gmerchant_country' => Configuration::get('CRMCYCLES_GMERCHANT_COUNTRY') ?: 'FR',
+            'gmerchant_has_credentials' => !empty(Configuration::get('CRMCYCLES_GMERCHANT_CREDENTIALS')),
+            'gmerchant_service_email' => $this->getGoogleServiceEmail(),
+            'gmerchant_feed_url' => $this->context->link->getModuleLink('crmcycles', 'googlefeed', [
+                'token' => Tools::substr(Tools::hash('crmcycles/googlefeed'), 0, 10),
+            ]),
         ];
     }
 
@@ -122,6 +162,43 @@ class AdminCrmCyclesController extends ModuleAdminController
         Configuration::updateValue('CRMCYCLES_DEV_MODE', (int) Tools::getValue('CRMCYCLES_DEV_MODE'));
 
         $this->confirmations[] = $this->l('Configuration sauvegardée.');
+    }
+
+    private function processGoogleMerchantConfig(): void
+    {
+        Configuration::updateValue('CRMCYCLES_GMERCHANT_ENABLED', (int) Tools::getValue('CRMCYCLES_GMERCHANT_ENABLED'));
+        Configuration::updateValue('CRMCYCLES_GMERCHANT_DESCRIPTION', Tools::getValue('CRMCYCLES_GMERCHANT_DESCRIPTION'));
+        Configuration::updateValue('CRMCYCLES_GMERCHANT_ONLY_INSTOCK', (int) Tools::getValue('CRMCYCLES_GMERCHANT_ONLY_INSTOCK'));
+        Configuration::updateValue('CRMCYCLES_GMERCHANT_MERCHANT_ID', trim(Tools::getValue('CRMCYCLES_GMERCHANT_MERCHANT_ID')));
+        Configuration::updateValue('CRMCYCLES_GMERCHANT_COUNTRY', trim(Tools::getValue('CRMCYCLES_GMERCHANT_COUNTRY')) ?: 'FR');
+
+        // Handle service account JSON
+        $credentialsInput = trim(Tools::getValue('CRMCYCLES_GMERCHANT_CREDENTIALS_INPUT'));
+        if (!empty($credentialsInput)) {
+            $decoded = json_decode($credentialsInput, true);
+            if ($decoded && !empty($decoded['private_key']) && !empty($decoded['client_email'])) {
+                Configuration::updateValue('CRMCYCLES_GMERCHANT_CREDENTIALS', $credentialsInput, true);
+                $this->confirmations[] = $this->l('Compte de service Google configuré : ') . $decoded['client_email'];
+            } else {
+                $this->errors[] = $this->l('Le JSON du compte de service est invalide. Il doit contenir au moins « private_key » et « client_email ».');
+            }
+        }
+
+        if (empty($this->errors)) {
+            $this->confirmations[] = $this->l('Configuration Google Merchant sauvegardée.');
+        }
+    }
+
+    private function processTestGoogleMerchant(): void
+    {
+        $gm = new CrmCyclesGoogleMerchant();
+        $result = $gm->testConnection();
+
+        if ($result['success']) {
+            $this->confirmations[] = $this->l('Connexion Google Merchant Center réussie !');
+        } else {
+            $this->errors[] = $this->l('Erreur Google Merchant : ') . ($result['message'] ?? 'Erreur inconnue');
+        }
     }
 
     private function processTestConnection(): void
@@ -335,6 +412,21 @@ class AdminCrmCyclesController extends ModuleAdminController
                 $result = $importer->importSingleCollection($crmId, $colId, $variants);
                 break;
 
+            case 'gmFetchPushQueue':
+                $gm = new CrmCyclesGoogleMerchant();
+                $onlyInStock = (bool) Configuration::get('CRMCYCLES_GMERCHANT_ONLY_INSTOCK');
+                $result = $gm->buildPushQueue($onlyInStock);
+                break;
+
+            case 'gmPushSingleProduct':
+                $gm = new CrmCyclesGoogleMerchant();
+                $idProduct = (int) Tools::getValue('id_product');
+                $result = $gm->pushProduct($idProduct);
+                if (!isset($result['log'])) {
+                    $result['log'] = $gm->getLog();
+                }
+                break;
+
             default:
                 $result = ['success' => false, 'message' => 'Action inconnue'];
         }
@@ -345,6 +437,17 @@ class AdminCrmCyclesController extends ModuleAdminController
 
         header('Content-Type: application/json');
         die(json_encode($result));
+    }
+
+    private function getGoogleServiceEmail(): string
+    {
+        $credentials = Configuration::get('CRMCYCLES_GMERCHANT_CREDENTIALS');
+        if (!$credentials) {
+            return '';
+        }
+
+        $data = json_decode($credentials, true);
+        return $data['client_email'] ?? '';
     }
 
     /**
